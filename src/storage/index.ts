@@ -513,7 +513,8 @@ export class TrackerStore implements StoreAPI {
       archive.pipe(output); archive.append(html, { name: 'report.html' }); archive.file(mhtmlTemporary, { name: 'report.mhtml' }); archive.append(JSON.stringify({ schemaVersion: 1, ...detail }, null, 2), { name: 'session.json' })
       for (const asset of media) archive.file(asset.absolute, { name: asset.file })
       await archive.finalize(); await finished
-      const fd = openSync(temporary, 'r'); try { fsyncSync(fd) } finally { closeSync(fd) }
+      // Windows FlushFileBuffers requires write access; r+ preserves ZIP bytes.
+      const fd = openSync(temporary, 'r+'); try { fsyncSync(fd) } finally { closeSync(fd) }
       renameSync(temporary, target); this.directorySync(dirname(target))
     } catch (error) { archive.abort(); output.destroy(); rmSync(temporary, { force: true }); throw error }
     finally { rmSync(mhtmlTemporary, { force: true }) }

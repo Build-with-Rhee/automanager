@@ -224,8 +224,11 @@ describe('durable tracker storage', () => {
   it('restores fsynced PCM from an actual abruptly terminated writer process', async () => {
     await store.close()
     const bundle = await build({ entryPoints: [join(process.cwd(), 'src/storage/index.ts')], platform: 'node', format: 'cjs', bundle: true, external: ['archiver'], write: false })
-    const code = bundle.outputFiles[0].text + '\nconst storage=new module.exports.TrackerStore(process.argv[1]); storage.createSession({audio:true,screen:false}).then(async session=>{await storage.appendAudio({sessionId:session.id,pcm:Buffer.alloc(2468),startedAt:session.startedAt,offsetMs:0}); process.stdout.write(session.id); process.kill(process.pid,"SIGKILL")});'
-    const child = spawnSync(process.execPath, ['--input-type=commonjs', '-e', code, directory], { cwd: process.cwd(), encoding: 'utf8' })
+    const code = bundle.outputFiles[0].text + '\nconst storage=new module.exports.TrackerStore(process.argv[2]); storage.createSession({audio:true,screen:false}).then(async session=>{await storage.appendAudio({sessionId:session.id,pcm:Buffer.alloc(2468),startedAt:session.startedAt,offsetMs:0}); process.stdout.write(session.id); process.kill(process.pid,"SIGKILL")});'
+    const writerFile = join(directory, 'crashed-writer.cjs')
+    writeFileSync(writerFile, code)
+    // A script file avoids Windows command-line limits for the bundled writer.
+    const child = spawnSync(process.execPath, [writerFile, directory], { cwd: process.cwd(), encoding: 'utf8', env: { ...process.env, NODE_PATH: join(process.cwd(), 'node_modules') } })
     expect(child.error).toBeUndefined()
     if (process.platform === 'win32') {
       // Self-SIGKILL uses TerminateProcess on Windows, reported as an exit code.
