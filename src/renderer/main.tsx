@@ -61,6 +61,8 @@ import type {
   Settings,
   Step,
 } from "../shared/types";
+import { requestMicrophone } from "../capture/devices";
+import { errorText } from "./errors";
 import "./styles.css";
 
 type View =
@@ -112,8 +114,6 @@ const size = (bytes: number) =>
   bytes >= 1e9
     ? `${(bytes / 1e9).toFixed(1)} GB`
     : `${Math.round(bytes / 1e6)} MB`;
-const errorText = (error: unknown) =>
-  error instanceof Error ? error.message : String(error);
 
 function BrandMark({ small = false }: { small?: boolean }) {
   return (
@@ -2394,86 +2394,127 @@ function SettingsView({
   run: Run;
 }) {
   const [displays, setDisplays] = useState<Array<{ id: string; name: string }>>(
-      [],
-    ),
-    [mics, setMics] = useState<MediaDeviceInfo[]>([]),
-    [micTesting, setMicTesting] = useState(false),
-    [level, setLevel] = useState(0),
-    [deviceError, setDeviceError] = useState("");
-  const stream = useRef<MediaStream | null>(null),
-    context = useRef<AudioContext | null>(null),
-    frame = useRef<number>(0);
+    [],
+  );
+  const [mics, setMics] = useState<MediaDeviceInfo[]>([]);
+  const [micsLoaded, setMicsLoaded] = useState(false);
+  const [micTesting, setMicTesting] = useState(false);
+  const [micPending, setMicPending] = useState(false);
+  const [level, setLevel] = useState(0);
+  const [deviceError, setDeviceError] = useState("");
+  const [micWarning, setMicWarning] = useState("");
+  const stream = useRef<MediaStream | null>(null);
+  const context = useRef<AudioContext | null>(null);
+  const frame = useRef(0);
+  const mounted = useRef(true);
+  const microphoneRequest = useRef(0);
+  const deviceListRequest = useRef(0);
   const stopMic = useCallback(() => {
+    microphoneRequest.current++;
     cancelAnimationFrame(frame.current);
     stream.current?.getTracks().forEach((track) => track.stop());
     stream.current = null;
     void context.current?.close();
     context.current = null;
     setMicTesting(false);
+    setMicPending(false);
     setLevel(0);
   }, []);
+  const refreshMicrophones = useCallback(async () => {
+    const request = ++deviceListRequest.current;
+    const devices = await navigator.mediaDevices?.enumerateDevices();
+    if (mounted.current && request === deviceListRequest.current) {
+      setMics((devices || []).filter((device) => device.kind === "audioinput"));
+      setMicsLoaded(true);
+    }
+  }, []);
   useEffect(() => {
-    let alive = true;
+    mounted.current = true;
     api
       .listDisplays()
       .then((value) => {
-        if (alive) setDisplays(value);
+        if (mounted.current) setDisplays(value);
       })
       .catch((error) => {
-        if (alive) setDeviceError(errorText(error));
+        if (mounted.current) setDeviceError(errorText(error));
       });
-    navigator.mediaDevices
-      ?.enumerateDevices()
-      .then((devices) => {
-        if (alive)
-          setMics(devices.filter((device) => device.kind === "audioinput"));
-      })
-      .catch((error) => {
-        if (alive) setDeviceError(errorText(error));
+    const refresh = () => {
+      void refreshMicrophones().catch((error) => {
+        if (mounted.current) setDeviceError(errorText(error));
       });
+    };
+    refresh();
+    navigator.mediaDevices?.addEventListener("devicechange", refresh);
     return () => {
-      alive = false;
+      mounted.current = false;
+      deviceListRequest.current++;
+      navigator.mediaDevices?.removeEventListener("devicechange", refresh);
       stopMic();
     };
-  }, [api, stopMic]);
+  }, [api, stopMic, refreshMicrophones]);
   const testMic = async () => {
     if (micTesting) {
       stopMic();
       return;
     }
+    const request = ++microphoneRequest.current;
+    setMicPending(true);
+    setMicWarning("");
     try {
-      const value = await navigator.mediaDevices.getUserMedia({
-        audio: state.settings.micDeviceId
-          ? { deviceId: { exact: state.settings.micDeviceId } }
-          : true,
-      });
-      stream.current = value;
-      const devices = await navigator.mediaDevices.enumerateDevices();
-      setMics(devices.filter((device) => device.kind === "audioinput"));
+      if (!navigator.mediaDevices?.getUserMedia) {
+        throw new Error(
+          "이 환경에서 마이크에 접근할 수 없습니다. 데스크톱 앱의 권한 설정을 확인해 주세요.",
+        );
+      }
+      const result = await requestMicrophone(
+        navigator.mediaDevices,
+        state.settings.micDeviceId,
+      );
+      if (!mounted.current || request !== microphoneRequest.current) {
+        result.stream.getTracks().forEach((track) => track.stop());
+        return;
+      }
+      stream.current = result.stream;
+      if (result.usedDefault) await api.updateSettings({ micDeviceId: "" });
+      if (!mounted.current || request !== microphoneRequest.current) return;
+      setMicWarning(result.warning || "");
+      await refreshMicrophones();
+      if (!mounted.current || request !== microphoneRequest.current) return;
       const audio = new AudioContext();
       context.current = audio;
+      await audio.resume();
+      if (!mounted.current || request !== microphoneRequest.current) return;
       const analyser = audio.createAnalyser();
       analyser.fftSize = 256;
-      audio.createMediaStreamSource(value).connect(analyser);
+      audio.createMediaStreamSource(result.stream).connect(analyser);
       const data = new Uint8Array(analyser.fftSize);
+      setDeviceError("");
       setMicTesting(true);
-      const update = () => {
+      const updateLevel = () => {
+        if (!mounted.current || request !== microphoneRequest.current) return;
         analyser.getByteTimeDomainData(data);
         setLevel(
           Math.min(
             1,
             Math.sqrt(
-              data.reduce((sum, n) => sum + ((n - 128) / 128) ** 2, 0) /
-                data.length,
+              data.reduce(
+                (sum, sample) => sum + ((sample - 128) / 128) ** 2,
+                0,
+              ) / data.length,
             ) * 5,
           ),
         );
-        frame.current = requestAnimationFrame(update);
+        frame.current = requestAnimationFrame(updateLevel);
       };
-      update();
+      updateLevel();
     } catch (error) {
-      stopMic();
-      setDeviceError(errorText(error));
+      if (mounted.current && request === microphoneRequest.current) {
+        stopMic();
+        setDeviceError(errorText(error));
+      }
+    } finally {
+      if (mounted.current && request === microphoneRequest.current)
+        setMicPending(false);
     }
   };
   const settings = state.settings;
@@ -2502,15 +2543,33 @@ function SettingsView({
               <label htmlFor="mic-device">입력 장치</label>
               <select
                 id="mic-device"
+                disabled={micPending}
                 value={settings.micDeviceId}
                 onChange={(event) => {
                   stopMic();
+                  setDeviceError("");
+                  setMicWarning("");
                   update({ micDeviceId: event.target.value });
                 }}
               >
                 <option value="">시스템 기본 마이크</option>
+                {settings.micDeviceId &&
+                  !mics.some(
+                    (mic) => mic.deviceId === settings.micDeviceId,
+                  ) && (
+                    <option value={settings.micDeviceId}>
+                      {micsLoaded
+                        ? "저장된 마이크 (연결되지 않음)"
+                        : "저장된 마이크 (확인 중)"}
+                    </option>
+                  )}
                 {mics
-                  .filter((mic) => mic.deviceId && mic.deviceId !== "default")
+                  .filter(
+                    (mic) =>
+                      mic.deviceId &&
+                      (mic.deviceId !== "default" ||
+                        settings.micDeviceId === "default"),
+                  )
                   .map((mic, i) => (
                     <option key={mic.deviceId} value={mic.deviceId}>
                       {mic.label || `마이크 ${i + 1}`}
@@ -2531,14 +2590,23 @@ function SettingsView({
                   <i key={index} className={index / 28 < level ? "lit" : ""} />
                 ))}
               </div>
-              <Button onClick={() => void testMic()}>
+              <Button disabled={micPending} onClick={() => void testMic()}>
                 {micTesting ? <Square size={12} /> : <Mic size={14} />}
-                {micTesting ? "확인 종료" : "마이크 확인"}
+                {micPending
+                  ? "마이크 연결 중"
+                  : micTesting
+                    ? "확인 종료"
+                    : "마이크 확인"}
               </Button>
             </div>
             {deviceError && (
               <p className="inline-error" role="alert">
                 {deviceError}
+              </p>
+            )}
+            {micWarning && (
+              <p className="info-note" role="status">
+                {micWarning}
               </p>
             )}
             <div className="settings-form-row">

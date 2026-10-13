@@ -84,6 +84,26 @@ describe('durable tracker storage', () => {
     expect(detail.steps[0].description).toBe('버튼 선택')
   })
 
+  it('persists microphone-free startup without disabling the next recording preference', async () => {
+    const session = await store.createSession({ audio: true, screen: true })
+    const changed = await store.disableSessionAudio(session.id)
+    expect(changed).toMatchObject({ audio: false, screen: true, status: 'recording' })
+    expect((await store.snapshot()).settings.audioEnabled).toBe(true)
+    await expect(store.appendAudio({ sessionId: session.id, pcm: Buffer.alloc(320), startedAt: session.startedAt, offsetMs: 0 })).rejects.toThrow()
+    await store.transition(session.id, 'completed', 10)
+    await store.close(); store = new TrackerStore(directory)
+    expect((await store.getSession(session.id)).session).toMatchObject({ audio: false, screen: true, status: 'completed' })
+  })
+
+  it('cannot erase the audio mode after samples were accepted or recording ended', async () => {
+    const session = await store.createSession({ audio: true, screen: false })
+    await store.appendAudio({ sessionId: session.id, pcm: Buffer.alloc(320), startedAt: session.startedAt, offsetMs: 0 })
+    await expect(store.disableSessionAudio(session.id)).rejects.toThrow(/audio|오디오/)
+    await store.transition(session.id, 'completed', 10)
+    await expect(store.disableSessionAudio(session.id)).rejects.toThrow(/recording|기록/)
+    expect((await store.getSession(session.id)).session.audio).toBe(true)
+  })
+
   it('allows explicit comments on archived sessions without collecting new recorded input', async () => {
     const session = await store.createSession({ audio: false, screen: false })
     await store.transition(session.id, 'completed', 500)

@@ -1,5 +1,44 @@
 import { expect, test, type Page } from "@playwright/test";
+import { writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { AppSnapshot, Session } from "../src/shared/types";
+
+// Chromium supplies a real MediaDevices implementation and deterministic audio.
+const microphoneSample = join(tmpdir(), "automanager-ui-microphone.wav");
+test.beforeAll(() => {
+  const samples = 16000;
+  const wav = Buffer.alloc(44 + samples * 2);
+  wav.write("RIFF", 0);
+  wav.writeUInt32LE(wav.length - 8, 4);
+  wav.write("WAVEfmt ", 8);
+  wav.writeUInt32LE(16, 16);
+  wav.writeUInt16LE(1, 20);
+  wav.writeUInt16LE(1, 22);
+  wav.writeUInt32LE(16000, 24);
+  wav.writeUInt32LE(32000, 28);
+  wav.writeUInt16LE(2, 32);
+  wav.writeUInt16LE(16, 34);
+  wav.write("data", 36);
+  wav.writeUInt32LE(samples * 2, 40);
+  for (let sample = 0; sample < samples; sample++) {
+    wav.writeInt16LE(
+      Math.round(Math.sin((sample / 16000) * 440 * 2 * Math.PI) * 8000),
+      44 + sample * 2,
+    );
+  }
+  writeFileSync(microphoneSample, wav);
+});
+test.use({
+  launchOptions: {
+    executablePath: process.env.CHROMIUM_PATH || "/usr/bin/chromium",
+    args: [
+      "--no-sandbox",
+      "--use-fake-device-for-media-stream",
+      `--use-file-for-fake-audio-capture=${microphoneSample}`,
+    ],
+  },
+});
 
 // The browser boundary replaces Electron IPC; the renderer and interactions are real.
 async function connectDesktop(
@@ -8,9 +47,10 @@ async function connectDesktop(
   failStart = false,
   slowDetails = false,
   withScreenshot = false,
+  micDeviceId = "",
 ) {
   await page.addInitScript(
-    ({ populated, failStart, slowDetails, withScreenshot }) => {
+    ({ populated, failStart, slowDetails, withScreenshot, micDeviceId }) => {
       const calls: Array<{ method: string; args: unknown[] }> = [];
       const session: Session = {
         id: "session-1",
@@ -72,7 +112,7 @@ async function connectDesktop(
           chunkSeconds: 30,
           screenshotLimit: 25,
           monitorId: "",
-          micDeviceId: "",
+          micDeviceId,
           language: "ko",
           autoTranscribe: false,
           whisperModel: "whisper-small",
@@ -317,7 +357,7 @@ async function connectDesktop(
       };
       Object.assign(window, { automanager: api, __calls: calls });
     },
-    { populated, failStart, slowDetails, withScreenshot },
+    { populated, failStart, slowDetails, withScreenshot, micDeviceId },
   );
 }
 
@@ -688,4 +728,96 @@ test("review preserves captured annotations and archived comments stay text only
       { method: "addComment", args: ["session-1", "보관된 기록에 남긴 메모"] },
     ]),
   );
+});
+
+test.describe("microphone settings with a real browser audio device", () => {
+  test.use({
+    permissions: ["microphone"],
+  });
+
+  test("a disconnected saved microphone is explicit and falls back to a working default", async ({
+    page,
+  }) => {
+    await connectDesktop(
+      page,
+      false,
+      false,
+      false,
+      false,
+      "unplugged-microphone",
+    );
+    await page.goto("/");
+    await page.getByRole("button", { name: "설정", exact: true }).click();
+    await expect(
+      page.getByRole("option", { name: "저장된 마이크 (연결되지 않음)" }),
+    ).toHaveCount(1);
+    await expect(page.getByLabel("입력 장치")).toHaveValue(
+      "unplugged-microphone",
+    );
+    await page
+      .getByRole("button", { name: "마이크 확인", exact: true })
+      .click();
+    await expect(
+      page.getByRole("button", { name: "확인 종료", exact: true }),
+    ).toBeVisible();
+    await expect(page.getByLabel("입력 장치")).toHaveValue("");
+    await expect(
+      page.getByText(
+        "선택한 마이크를 찾을 수 없어 시스템 기본 마이크로 녹음합니다.",
+      ),
+    ).toBeVisible();
+    await expect
+      .poll(async () =>
+        Number(
+          await page
+            .getByRole("meter", { name: "마이크 입력 레벨" })
+            .getAttribute("aria-valuenow"),
+        ),
+      )
+      .toBeGreaterThan(0);
+    expect(
+      await page.evaluate(
+        () => (window as unknown as { __calls: unknown[] }).__calls,
+      ),
+    ).toEqual(
+      expect.arrayContaining([
+        { method: "updateSettings", args: [{ micDeviceId: "" }] },
+      ]),
+    );
+    await page.getByRole("button", { name: "확인 종료", exact: true }).click();
+    await expect(
+      page.getByRole("meter", { name: "마이크 입력 레벨" }),
+    ).toHaveAttribute("aria-valuenow", "0");
+  });
+
+  test("device changes refresh choices and a successful permission retry clears the old error", async ({
+    page,
+    context,
+  }) => {
+    await context.clearPermissions();
+    await context.grantPermissions(["clipboard-read"]);
+    await connectDesktop(page);
+    await page.goto("/");
+    await page.getByRole("button", { name: "설정", exact: true }).click();
+    await page
+      .getByRole("button", { name: "마이크 확인", exact: true })
+      .click();
+    await expect(page.getByRole("alert")).toContainText(
+      "마이크 접근 권한이 거부되었습니다.",
+    );
+    await context.grantPermissions(["microphone"]);
+    await page.evaluate(() =>
+      navigator.mediaDevices.dispatchEvent(new Event("devicechange")),
+    );
+    await expect(
+      page.getByRole("option", { name: /Fake Audio Input/ }).first(),
+    ).toHaveCount(1);
+    await page
+      .getByRole("button", { name: "마이크 확인", exact: true })
+      .click();
+    await expect(
+      page.getByRole("button", { name: "확인 종료", exact: true }),
+    ).toBeVisible();
+    await expect(page.getByRole("alert")).toHaveCount(0);
+  });
 });

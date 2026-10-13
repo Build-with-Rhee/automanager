@@ -1,4 +1,6 @@
 import { encodePCM } from "./pcm";
+import { MicrophoneError, requestMicrophone } from "./devices";
+import type { CaptureStartResult } from "../shared/types";
 interface CaptureCommand {
   id: string;
   type: "start" | "pause" | "resume" | "stop" | "screenshot";
@@ -29,16 +31,8 @@ const pending = new Set<Promise<void>>();
 let flushResolve: (() => void) | null = null;
 let commandReceivedAt = 0;
 async function startAudio(deviceId: string | undefined) {
-  audio = await navigator.mediaDevices.getUserMedia({
-    audio: {
-      deviceId: deviceId ? { exact: deviceId } : undefined,
-      channelCount: 1,
-      echoCancellation: false,
-      noiseSuppression: false,
-      autoGainControl: false,
-    },
-    video: false,
-  });
+  const microphone = await requestMicrophone(navigator.mediaDevices, deviceId);
+  audio = microphone.stream;
   audio.getTracks().forEach((track) => {
     track.onended = () => bridge.send("error", "마이크 연결이 끊어졌습니다.");
   });
@@ -87,6 +81,7 @@ async function startAudio(deviceId: string | undefined) {
   await context.resume();
   audioContextOffset =
     offset + performance.now() - commandReceivedAt - context.currentTime * 1000;
+  return { warning: microphone.warning, usedDefault: microphone.usedDefault };
 }
 async function stopAudio() {
   const ownedNode = node,
@@ -110,29 +105,33 @@ async function stopAudio() {
 }
 async function startScreen(sourceId: string | undefined) {
   try {
-    screenStream = await navigator.mediaDevices.getDisplayMedia({
-      video: { frameRate: 5 },
-      audio: false,
+    try {
+      screenStream = await navigator.mediaDevices.getDisplayMedia({
+        video: { frameRate: 5 },
+        audio: false,
+      });
+    } catch (error) {
+      if (!sourceId) throw error;
+      screenStream = await navigator.mediaDevices.getUserMedia({
+        audio: false,
+        video: {
+          mandatory: {
+            chromeMediaSource: "desktop",
+            chromeMediaSourceId: sourceId,
+          },
+        } as unknown as MediaTrackConstraints,
+      });
+    }
+    screenStream.getTracks().forEach((t) => {
+      t.onended = () => bridge.send("error", "화면 기록 연결이 끊어졌습니다.");
     });
+    video = document.createElement("video");
+    video.muted = true;
+    video.srcObject = screenStream;
+    await video.play();
   } catch (error) {
-    if (!sourceId) throw error;
-    screenStream = await navigator.mediaDevices.getUserMedia({
-      audio: false,
-      video: {
-        mandatory: {
-          chromeMediaSource: "desktop",
-          chromeMediaSourceId: sourceId,
-        },
-      } as unknown as MediaTrackConstraints,
-    });
+    throw new Error("화면 기록을 시작할 수 없습니다. 화면 연결과 캡처 권한을 확인하세요.", { cause: error });
   }
-  screenStream.getTracks().forEach((t) => {
-    t.onended = () => bridge.send("error", "화면 기록 연결이 끊어졌습니다.");
-  });
-  video = document.createElement("video");
-  video.muted = true;
-  video.srcObject = screenStream;
-  await video.play();
 }
 async function stop() {
   await stopAudio();
@@ -173,6 +172,8 @@ function screenshot(command: CaptureCommand) {
 let commandQueue = Promise.resolve();
 bridge.onCommand((command) => {
   commandQueue = commandQueue.then(async () => {
+    let warning: string | null = null;
+    let usedDefaultMicrophone = false;
     try {
       if (command.type === "start" || command.type === "resume") {
         offset = command.offsetMs || 0;
@@ -180,7 +181,17 @@ bridge.onCommand((command) => {
         sampleCount = 0;
         startedAt = Date.now() - offset;
         paused = false;
-        if (command.audio) await startAudio(command.micDeviceId);
+        if (command.audio) {
+          try {
+            const microphone = await startAudio(command.micDeviceId);
+            warning = microphone.warning;
+            usedDefaultMicrophone = microphone.usedDefault;
+          } catch (error) {
+            if (!(error instanceof MicrophoneError) || error.kind !== "missing" || !command.screen) throw error;
+            await stopAudio();
+            warning = "마이크를 찾을 수 없어 이번 기록은 음성 없이 화면과 작업 단계만 기록합니다. 설정에서 마이크를 확인하세요.";
+          }
+        }
         if (command.screen && !screenStream)
           await startScreen(command.sourceId);
       } else if (command.type === "pause") {
@@ -193,7 +204,13 @@ bridge.onCommand((command) => {
       const result =
         command.type === "screenshot"
           ? await screenshot(command)
-          : { width: video?.videoWidth || 0, height: video?.videoHeight || 0 };
+          : {
+            width: video?.videoWidth || 0,
+            height: video?.videoHeight || 0,
+            audio: !!audio && !paused,
+            warning,
+            usedDefaultMicrophone,
+          } satisfies CaptureStartResult;
       bridge.send("result", { id: command.id, result });
     } catch (error) {
       await stop();

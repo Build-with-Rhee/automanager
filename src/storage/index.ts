@@ -212,6 +212,14 @@ export class TrackerStore implements StoreAPI {
     this.saveSession(session)
     return this.enrichedSession(session)
   }
+  async disableSessionAudio(id: string): Promise<Session> {
+    const session = this.session(id)
+    if (session.status !== 'recording') throw new Error('Audio mode can only be set during recording startup')
+    if (this.pending.has(id) || this.db.prepare('SELECT id FROM chunks WHERE session_id=? LIMIT 1').get(id)) throw new Error('Cannot disable audio after samples were accepted')
+    session.audio = false
+    this.saveSession(session)
+    return this.enrichedSession(session)
+  }
   async getSession(id: string): Promise<SessionDetail> {
     const session = this.enrichedSession(this.session(id))
     return { session, steps: this.rows<Step>('SELECT data FROM steps WHERE session_id=? ORDER BY sequence', id), chunks: this.rows<AudioChunk>('SELECT data FROM chunks WHERE session_id=? ORDER BY sequence', id), jobs: this.rows<Job>('SELECT data FROM jobs WHERE session_id=? ORDER BY created_at', id) }

@@ -1,6 +1,8 @@
 # 실행 검증 기록
 
-2026-10-13, Linux x64 / Node 24 / Electron 44.7.0에서 실행했다. Windows 결과와 실제 하드웨어 입력의 결과는 포함하지 않는다.
+0.1.1 핫픽스에서는 `scripts/smoke-devices.mjs --real-no-mic`로 기존 `Requested device not found` 오류를 실제 Electron에서 재현한 뒤 수정했다. 마이크 없이 화면·작업 기록, 주석 이미지 저장, 일시정지·재개, 음성 전용 실패 후 다시 시작을 검증했다. 별도의 합성 미디어 검사에서는 저장된 잘못된 마이크 ID를 기본 장치로 대체하고 WAV를 저장했으며, 권한 거부를 무음 기록으로 처리하지 않는지 확인했다. Windows CI에도 패키징한 프로그램의 같은 회귀 검사를 추가했다. 자세한 변경은 [0.1.1 핫픽스](HOTFIX-v0.1.1.md)에 기록했다.
+
+다음 표는 2026-10-13, Linux x64 / Node 24 / Electron 44.7.0에서 실행한 결과다. 실제 Windows 하드웨어 입력의 결과는 포함하지 않는다.
 
 | 검사 | 결과와 범위 |
 | --- | --- |
@@ -20,4 +22,4 @@
 
 리뷰에서 재현한 재개 시 PCM 손실, 종료한 저장 worker의 후속 명령 무한 대기, 200개 terminal job 목록 밖으로 밀려난 취소 작업의 자동 재실행을 실패 테스트로 고정하고 수정했다. 화면의 raw 전역 좌표를 다시 그리는 중복 overlay도 제거했다.
 
-Windows MSVC addon 빌드·실행, Windows 설치물·UI Automation·다중 모니터/DPI·UAC/잠금 화면, 물리 마이크/장치 분리·GPU 가속은 아직 실행 검증하지 않았다. Windows CI 경로를 추가했지만 이 작업에서는 push나 워크플로 실행을 하지 않았다. Linux 결과로 해당 검증을 대체하지 않는다.
+Windows MSVC addon 빌드와 Node-API 로딩, 단위 테스트·타입 검사, NSIS 설치 파일 생성·업로드는 [Windows CI 38338439408](https://github.com/Build-with-Rhee/automanager/actions/runs/38338439408)에서 통과했다. 실제 Windows UI Automation 입력·다중 모니터/DPI·UAC/잠금 화면, 물리 마이크/장치 분리·GPU 가속은 아직 실행 검증하지 않았다. 합성 미디어나 Linux 결과로 해당 검증을 대체하지 않는다.

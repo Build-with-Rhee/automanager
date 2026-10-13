@@ -7,7 +7,7 @@ import {
 } from "electron";
 import { resolve } from "node:path";
 import { randomUUID } from "node:crypto";
-import type { Settings, StoreAPI, Rect } from "../shared/types";
+import type { Settings, StoreAPI, Rect, CaptureStartResult } from "../shared/types";
 import { displayPoint } from "../capture/pcm";
 export class CaptureManager {
   private window: BrowserWindow | null = null;
@@ -163,13 +163,15 @@ export class CaptureManager {
     if (settings.screenEnabled) await this.selectSource(settings);
     await this.ensure();
     try {
-      this.dimensions = (await this.command(type, {
+      const result = (await this.command(type, {
         audio: settings.audioEnabled,
         screen: settings.screenEnabled,
         micDeviceId: settings.micDeviceId,
         sourceId: this.sourceId,
         offsetMs: offsetMs + performance.now() - entered,
-      })) as typeof this.dimensions;
+      })) as CaptureStartResult;
+      this.dimensions = { width: result.width, height: result.height };
+      return result;
     } catch (error) {
       this.activeId = null;
       throw error;

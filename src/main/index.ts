@@ -27,6 +27,7 @@ import type {
   RecordedAction,
   Schedule,
   SynthOptions,
+  CaptureStartResult,
 } from "../shared/types";
 import { validateCommand, isTrustedRenderer } from "../shared/validation";
 import { startStore } from "./store-client";
@@ -230,7 +231,11 @@ async function start(options: StartOptions) {
   active = await store.api.createSession(options);
   clock = new SessionClock();
   try {
-    await capture.start(active.id, currentSettings, clock.elapsed());
+    const captureResult = await capture.start(active.id, currentSettings, clock.elapsed());
+    if (currentSettings.audioEnabled && !captureResult.audio) {
+      currentSettings.audioEnabled = false;
+      active = await store.api.disableSessionAudio(active.id);
+    }
     try {
       await actions.start();
     } catch (e) {
@@ -245,6 +250,7 @@ async function start(options: StartOptions) {
         offsetMs: clock.elapsed(),
       });
     }
+    await reportCaptureResult(captureResult);
     await store.api.appendStep({
       sessionId: active.id,
       kind: "system",
@@ -267,6 +273,24 @@ async function start(options: StartOptions) {
     clock = null;
     reportError(e);
     throw e;
+  }
+}
+async function reportCaptureResult(result: CaptureStartResult) {
+  if (!active) return;
+  if (result.usedDefaultMicrophone) {
+    currentSettings.micDeviceId = "";
+    await store.api.updateSettings({ micDeviceId: "" });
+  }
+  if (result.warning) {
+    error = [error, result.warning].filter(Boolean).join(" ");
+    await store.api.appendStep({
+      sessionId: active.id,
+      kind: "gap",
+      description: result.warning,
+      warning: result.warning,
+      timestamp: Date.now(),
+      offsetMs: clock?.elapsed() || 0,
+    });
   }
 }
 async function pause() {
@@ -304,12 +328,14 @@ async function resume() {
       );
     },
     async () => {
-      await capture.start(id, currentSettings, clock?.elapsed() || 0, "resume");
+      const result = await capture.start(id, currentSettings, clock?.elapsed() || 0, "resume");
+      if (!result.audio) currentSettings.audioEnabled = false;
       try {
         await actions.start();
       } catch (e) {
         reportError(e);
       }
+      await reportCaptureResult(result);
     },
     async () => {
       await capture.stop().catch(reportError);

@@ -42,6 +42,8 @@ jobs:
       - name: Package Windows x64 installer
         # Distribute CI builds through Actions artifacts; publish releases explicitly.
         run: npm run package:win -- --x64 --publish never
+      - name: Verify packaged microphone fallback and recording startup
+        run: node scripts/smoke-devices.mjs --packaged
       - name: Upload Windows installer and native module
         uses: actions/upload-artifact@v4
         with:

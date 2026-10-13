@@ -1,6 +1,6 @@
 {
   "name": "automanager",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "작업과 음성을 한 타임라인에 기록하는 로컬 데스크톱 트래커",
   "type": "module",
   "main": "./out/main/index.js",
@@ -22,7 +22,8 @@
     "models:install": "tsx scripts/install-models.ts",
     "test:speech": "tsx scripts/validate-speech.ts",
     "start:cloud": "bash scripts/start-cloud.sh",
-    "test:screen": "node scripts/smoke-screen.mjs"
+    "test:screen": "node scripts/smoke-screen.mjs",
+    "test:devices": "node scripts/smoke-devices.mjs"
   },
   "dependencies": {
     "archiver": "^7.0.1",
@@ -95,7 +96,8 @@
     ],
     "win": {
       "target": "nsis",
-      "icon": "resources/icon.ico"
+      "icon": "resources/icon.ico",
+      "artifactName": "Automanager-Setup-${version}-${arch}.${ext}"
     },
     "nsis": {
       "oneClick": false,

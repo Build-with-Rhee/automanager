@@ -86,6 +86,13 @@ export interface Settings {
   preventSleep: boolean;
   storageLimitGiB: number;
 }
+export interface CaptureStartResult {
+  width: number;
+  height: number;
+  audio: boolean;
+  warning: string | null;
+  usedDefaultMicrophone: boolean;
+}
 export interface Schedule {
   id: string;
   title: string;
@@ -217,6 +224,7 @@ export interface AppendAudioInput {
 export interface StoreAPI {
   snapshot(): Promise<StoreSnapshot>;
   createSession(options: StartOptions): Promise<Session>;
+  disableSessionAudio(id: string): Promise<Session>;
   transition(
     id: string,
     status: SessionStatus,

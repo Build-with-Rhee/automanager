@@ -7,7 +7,7 @@ const parentPort = (process as NodeJS.Process & { parentPort?: Port }).parentPor
 const directory = process.argv[2] ?? process.env.AUTOMANAGER_DATA_DIRECTORY
 if (!directory) throw new Error('Storage worker requires a data directory')
 const store = new TrackerStore(directory)
-const allowed = new Set<keyof StoreAPI>(['snapshot', 'createSession', 'transition', 'getSession', 'renameSession', 'deleteSession', 'appendStep', 'appendAudio', 'flushAudio', 'updateSettings', 'createJob', 'updateJob', 'updateChunk', 'saveSchedule', 'deleteSchedule', 'exportSession', 'resolveAsset', 'importOutput', 'close'])
+const allowed = new Set<keyof StoreAPI>(['snapshot', 'createSession', 'disableSessionAudio', 'transition', 'getSession', 'renameSession', 'deleteSession', 'appendStep', 'appendAudio', 'flushAudio', 'updateSettings', 'createJob', 'updateJob', 'updateChunk', 'saveSchedule', 'deleteSchedule', 'exportSession', 'resolveAsset', 'importOutput', 'close'])
 let queue = Promise.resolve()
 let queuedBytes = 0
 let queuedPcm = 0
