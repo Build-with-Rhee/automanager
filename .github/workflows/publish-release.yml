@@ -1,0 +1,93 @@
+name: Publish verified Windows release
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_run_id:
+        description: Successful Windows desktop build run ID
+        required: true
+        type: string
+      release_tag:
+        description: Release tag matching the built package version (vX.Y.Z)
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      BUILD_RUN_ID: ${{ inputs.build_run_id }}
+      RELEASE_TAG: ${{ inputs.release_tag }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Validate successful build source
+        id: source
+        run: |
+          set -euo pipefail
+          [[ "$BUILD_RUN_ID" =~ ^[0-9]+$ ]]
+          [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          gh api "repos/$GH_REPO/actions/runs/$BUILD_RUN_ID" > source-run.json
+          python3 - <<'PY'
+          import json, os, re
+          run = json.load(open('source-run.json'))
+          assert run['conclusion'] == 'success', 'Source build must have succeeded'
+          assert run['head_repository']['full_name'] == os.environ['GH_REPO'], 'Source repository mismatch'
+          assert run['head_branch'] == 'main', 'Source build must be from main'
+          assert run['path'] == '.github/workflows/windows.yml', 'Source workflow mismatch'
+          assert re.fullmatch(r'[0-9a-f]{40}', run['head_sha']), 'Invalid build commit'
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              output.write(f"head_sha={run['head_sha']}\n")
+          PY
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.source.outputs.head_sha }}
+      - name: Download and verify built installer
+        run: |
+          set -euo pipefail
+          gh run download "$BUILD_RUN_ID" --name automanager-windows-x64 --dir release-assets
+          python3 - <<'PY'
+          import hashlib, json, os, struct
+          from pathlib import Path
+          version = json.loads(Path('package.json').read_text())['version']
+          tag = os.environ['RELEASE_TAG']
+          assert tag == f'v{version}', 'Release tag must match the built package version'
+          assert Path(f'docs/HOTFIX-{tag}.md').is_file(), 'Release notes missing at build commit'
+          directory = Path('release-assets/release')
+          installer = directory / f'Automanager-Setup-{version}-x64.exe'
+          blockmap = Path(f'{installer}.blockmap')
+          assert installer.is_file() and blockmap.is_file(), 'Installer or blockmap missing'
+          with installer.open('rb') as binary:
+              header = binary.read(64)
+              assert len(header) == 64 and header[:2] == b'MZ', 'Invalid executable header'
+              binary.seek(struct.unpack_from('<I', header, 0x3c)[0])
+              assert binary.read(4) == b'PE\0\0', 'Invalid PE signature'
+          checksums = []
+          for asset in (installer, blockmap):
+              assert asset.stat().st_size > 0, 'Empty release asset'
+              with asset.open('rb') as binary:
+                  checksums.append(f'{hashlib.file_digest(binary, "sha256").hexdigest()}  {asset.name}\n')
+          (directory / 'SHA256SUMS').write_text(''.join(checksums))
+          print(''.join(checksums), end='')
+          PY
+      - name: Publish release and assets
+        env:
+          BUILD_SHA: ${{ steps.source.outputs.head_sha }}
+        run: |
+          set -euo pipefail
+          version="${RELEASE_TAG#v}"
+          installer="release-assets/release/Automanager-Setup-${version}-x64.exe"
+          gh release create "$RELEASE_TAG" "$installer" "$installer.blockmap" release-assets/release/SHA256SUMS \
+            --target "$BUILD_SHA" --notes-file "docs/HOTFIX-${RELEASE_TAG}.md" \
+            --title "Automanager ${RELEASE_TAG} — 마이크 오류 수정" --latest
+          gh release view "$RELEASE_TAG" --json url --jq '.url' | tee -a "$GITHUB_STEP_SUMMARY"
+          gh api "repos/$GH_REPO/releases/tags/$RELEASE_TAG" \
+            --jq '.assets[] | select(.name | endswith(".exe")) | .browser_download_url' | tee -a "$GITHUB_STEP_SUMMARY"
