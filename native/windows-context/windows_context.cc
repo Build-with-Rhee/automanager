@@ -1,5 +1,7 @@
 #include <napi.h>
 #include <windows.h>
+// WIN32_LEAN_AND_MEAN omits the COM declarations required by UIAutomation.h.
+#include <objbase.h>
 #include <UIAutomation.h>
 #include <atomic>
 #include <chrono>

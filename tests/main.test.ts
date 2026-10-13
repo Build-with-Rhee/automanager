@@ -2,6 +2,9 @@ import { describe, expect, it } from "vitest";
 import { validateCommand, isTrustedRenderer } from "../src/shared/validation";
 import { nextScheduleRun, dueSchedules } from "../src/main/scheduling";
 import { SessionClock, SerialDrain } from "../src/main/lifecycle";
+import { tmpdir } from "node:os";
+import { resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 
 describe("desktop boundary", () => {
   it("rejects arbitrary IPC methods and unsafe identifiers", () => {
@@ -17,31 +20,33 @@ describe("desktop boundary", () => {
     ).toThrow();
   });
   it("only trusts the application renderer URL", () => {
+    const entryFile = resolve(tmpdir(), "automanager-renderer", "app", "index.html");
+    const otherFile = resolve(tmpdir(), "automanager-renderer", "other", "index.html");
     expect(
-      isTrustedRenderer("https://example.com", undefined, "/app/index.html"),
+      isTrustedRenderer("https://example.com", undefined, entryFile),
     ).toBe(false);
     expect(
       isTrustedRenderer(
         "http://localhost:5173/attack",
         "http://localhost:5173/",
-        "/app/index.html",
+        entryFile,
       ),
     ).toBe(false);
     expect(
       isTrustedRenderer(
         "http://localhost:5173/",
         "http://localhost:5173/",
-        "/app/index.html",
+        entryFile,
       ),
     ).toBe(true);
     expect(
-      isTrustedRenderer("file:///app/index.html", undefined, "/app/index.html"),
+      isTrustedRenderer(pathToFileURL(entryFile).href, undefined, entryFile),
     ).toBe(true);
     expect(
       isTrustedRenderer(
-        "file:///other/index.html",
+        pathToFileURL(otherFile).href,
         undefined,
-        "/app/index.html",
+        entryFile,
       ),
     ).toBe(false);
   });

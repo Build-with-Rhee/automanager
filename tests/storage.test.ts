@@ -226,7 +226,15 @@ describe('durable tracker storage', () => {
     const bundle = await build({ entryPoints: [join(process.cwd(), 'src/storage/index.ts')], platform: 'node', format: 'cjs', bundle: true, external: ['archiver'], write: false })
     const code = bundle.outputFiles[0].text + '\nconst storage=new module.exports.TrackerStore(process.argv[1]); storage.createSession({audio:true,screen:false}).then(async session=>{await storage.appendAudio({sessionId:session.id,pcm:Buffer.alloc(2468),startedAt:session.startedAt,offsetMs:0}); process.stdout.write(session.id); process.kill(process.pid,"SIGKILL")});'
     const child = spawnSync(process.execPath, ['--input-type=commonjs', '-e', code, directory], { cwd: process.cwd(), encoding: 'utf8' })
-    expect(child.signal).toBe('SIGKILL')
+    expect(child.error).toBeUndefined()
+    if (process.platform === 'win32') {
+      // Self-SIGKILL uses TerminateProcess on Windows, reported as an exit code.
+      expect(child.signal).toBeNull()
+      expect(child.status).toBe(1)
+    } else {
+      expect(child.signal).toBe('SIGKILL')
+      expect(child.status).toBeNull()
+    }
     expect(child.stdout).toMatch(/^[a-f0-9-]{36}$/)
     store = new TrackerStore(directory)
     const detail = await store.getSession(child.stdout)
