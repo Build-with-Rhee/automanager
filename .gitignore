@@ -1,0 +1,17 @@
+node_modules/
+out/
+dist/
+release/
+coverage/
+test-results/
+playwright-report/
+.cache/
+.superpowers/
+*.log
+native/**/build/
+resources/engines/runtime/
+resources/engines/models/
+resources/engines/whisper/
+.venv/
+__pycache__/
+*.pyc

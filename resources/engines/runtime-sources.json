@@ -1,0 +1,48 @@
+{
+  "whisper": {
+    "url": "https://codeload.github.com/ggml-org/whisper.cpp/tar.gz/d1be6fde11ac6e0407606b4e42fe72d34add8037",
+    "revision": "d1be6fde11ac6e0407606b4e42fe72d34add8037",
+    "sizeBytes": 9631456,
+    "sha256": "645445da884df6dbd52b30f82d7be7c01d1767c938714e477e786b88d529e9f4",
+    "path": "automanager-whisper-source.tar.gz"
+  },
+  "melo": {
+    "url": "https://codeload.github.com/myshell-ai/MeloTTS/tar.gz/209145371cff8fc3bd60d7be902ea69cbdb7965a",
+    "revision": "209145371cff8fc3bd60d7be902ea69cbdb7965a",
+    "sizeBytes": 5873911,
+    "sha256": "ceb9a1a636522fee6489c8496ef5b6b9b3b8c1e8441f402eea00d8a17fbe52b8",
+    "path": "automanager-melo-source.tar.gz"
+  },
+  "python-linux-x64": {
+    "revision": "20261009",
+    "version": "3.12.15",
+    "license": "PSF-2.0 and bundled dependency notices",
+    "url": "https://github.com/astral-sh/python-build-standalone/releases/download/20261009/cpython-3.12.15%2B20261009-x86_64-unknown-linux-gnu-install_only_stripped.tar.gz",
+    "sizeBytes": 34304557,
+    "sha256": "ffa8f85f1b56e88b687f08d743d817015524b86a9365fd921243132b80f1a36d",
+    "path": "python-linux-x64.tar.gz"
+  },
+  "python-windows-x64": {
+    "revision": "20261009",
+    "version": "3.12.15",
+    "license": "PSF-2.0 and bundled dependency notices",
+    "url": "https://github.com/astral-sh/python-build-standalone/releases/download/20261009/cpython-3.12.15%2B20261009-x86_64-pc-windows-msvc-install_only_stripped.tar.gz",
+    "sizeBytes": 22011208,
+    "sha256": "11ed9f8a6ac64fb1b5a55e40e305a6744a3f77a70863c8f8197a6e4349abc64a",
+    "path": "python-windows-x64.tar.gz"
+  },
+  "sherpa": {
+    "url": "https://codeload.github.com/k2-fsa/sherpa-onnx/tar.gz/11afbd009a7f8c08f4bcf2fc1b265d0df4670fbf",
+    "revision": "11afbd009a7f8c08f4bcf2fc1b265d0df4670fbf",
+    "sizeBytes": 11645413,
+    "sha256": "0a8db6c55dd318f4a688faba85f7760b99a6c92e8ef8864479d418531bee1ac2",
+    "path": "automanager-sherpa-source.tar.gz"
+  },
+  "espeak": {
+    "url": "https://codeload.github.com/csukuangfj/espeak-ng/tar.gz/ed530aa113046142eb5115cf2fc9157854d0ffe1",
+    "revision": "ed530aa113046142eb5115cf2fc9157854d0ffe1",
+    "sizeBytes": 16321364,
+    "sha256": "3606d2bf55b3d7e6f1a0685e5d1a83c24f96197ada93b849a4dbfe7b34baf0d9",
+    "path": "automanager-espeak-source.tar.gz"
+  }
+}

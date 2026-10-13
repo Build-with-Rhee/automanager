@@ -1,0 +1,117 @@
+{
+  "name": "automanager",
+  "version": "0.1.0",
+  "description": "작업과 음성을 한 타임라인에 기록하는 로컬 데스크톱 트래커",
+  "type": "module",
+  "main": "./out/main/index.js",
+  "private": true,
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "start": "electron-vite preview",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:ui": "playwright test",
+    "package": "npm run build && electron-builder",
+    "package:linux": "npm run build && electron-builder --linux dir",
+    "package:win": "npm run build && electron-builder --win nsis",
+    "native:win": "node scripts/build-windows-native.mjs",
+    "postinstall": "node scripts/postinstall.mjs",
+    "test:desktop": "node scripts/smoke-desktop.mjs",
+    "engines:setup": "python3 scripts/setup-engines.py --directory resources/engines/runtime --portable-python --whisper --python",
+    "models:install": "tsx scripts/install-models.ts",
+    "test:speech": "tsx scripts/validate-speech.ts",
+    "start:cloud": "bash scripts/start-cloud.sh",
+    "test:screen": "node scripts/smoke-screen.mjs"
+  },
+  "dependencies": {
+    "archiver": "^7.0.1",
+    "lucide-react": "^0.468.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "uiohook-napi": "1.5.5",
+    "undici": "7.30.0",
+    "zod": "^4.0.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.56.0",
+    "@types/archiver": "^6.0.3",
+    "@types/node": "^24.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@vitejs/plugin-react": "^5.0.0",
+    "electron": "44.7.0",
+    "electron-builder": "^26.0.0",
+    "electron-vite": "5.0.0",
+    "node-addon-api": "^8.0.0",
+    "node-gyp": "^11.0.0",
+    "prettier": "3.9.10",
+    "tsx": "4.23.15",
+    "typescript": "^5.9.0",
+    "vite": "^7.0.0",
+    "vitest": "^3.2.0"
+  },
+  "build": {
+    "appId": "dev.automanager.desktop",
+    "productName": "Automanager",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "out/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "resources",
+        "to": "resources",
+        "filter": [
+          "**/*",
+          "!engines/models/**",
+          "!engines/whisper/**",
+          "!engines/runtime/**",
+          "!**/__pycache__/**",
+          "!**/*.pyc"
+        ]
+      },
+      {
+        "from": "native/windows-context/build/Release",
+        "to": "native",
+        "filter": [
+          "*.node"
+        ]
+      },
+      {
+        "from": "scripts",
+        "to": "engine-setup",
+        "filter": [
+          "setup-engines.py",
+          "setup-engines.ps1"
+        ]
+      }
+    ],
+    "asarUnpack": [
+      "node_modules/uiohook-napi/**/*"
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "resources/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    },
+    "linux": {
+      "target": [
+        "AppImage"
+      ],
+      "category": "Utility",
+      "icon": "resources/icon.png"
+    },
+    "npmRebuild": false
+  },
+  "author": "Automanager contributors",
+  "engines": {
+    "node": ">=24 <25"
+  }
+}

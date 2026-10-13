@@ -1,0 +1,54 @@
+name: Windows desktop build
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, master]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  windows-x64:
+    runs-on: windows-2022
+    timeout-minutes: 30
+    env:
+      CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Install locked dependencies
+        run: npm ci
+      # node-gyp/MSVC supplies its Windows delay-load hook for node.exe exports.
+      # Direct MinGW linkage to Electron's node.lib imports node.exe and does not
+      # establish loadability inside the installed, renamed Automanager.exe.
+      - name: Build Windows Node-API bridge with MSVC
+        run: npm run native:win
+      - name: Verify native module ABI and exports
+        run: >-
+          node --input-type=commonjs -e
+          "const assert=require('node:assert/strict');
+          const addon=require('./native/windows-context/build/Release/windows_context.node');
+          for(const name of ['start','stop','getElement']) assert.equal(typeof addon[name],'function');
+          assert.equal(addon.getElement('0',0,0,0,false).unavailable,true);"
+      - name: Run unit tests
+        run: npm test
+      - name: Typecheck application and tests
+        run: npm run typecheck
+      - name: Package Windows x64 installer
+        run: npm run package:win -- --x64
+      - name: Upload Windows installer and native module
+        uses: actions/upload-artifact@v4
+        with:
+          name: automanager-windows-x64
+          if-no-files-found: error
+          retention-days: 14
+          path: |
+            release/*.exe
+            release/*.blockmap
+            release/*.yml
+            native/windows-context/build/Release/windows_context.node
